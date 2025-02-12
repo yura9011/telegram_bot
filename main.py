@@ -25,6 +25,26 @@ import numpy as np
 from sentence_transformers import SentenceTransformer
 from typing import Union
 import base64 #Import base 64
+from serpapi import GoogleSearch
+
+# --- Configuration ---
+import os
+def load_config() -> Dict[str, Any]:
+    config = {}
+    # Load from config.yaml
+    try:
+        with open("config.yaml", "r") as f:
+            yaml_config = yaml.safe_load(f)
+            config.update(yaml_config)
+    except FileNotFoundError as e:
+        logger.warning(f"config.yaml not found, using environment variables only.")
+
+    # Override with environment variables if set
+    config['bot_token'] = os.environ.get('BOT_TOKEN', config.get('bot_token')) # Fallback to config.yaml if env var not set
+    config['gemini_api_key'] = os.environ.get('GEMINI_API_KEY', config.get('gemini_api_key'))
+    config['serpapi_api_key'] = os.environ.get('SERPAPI_API_KEY', config.get('serpapi', {}).get('api_key')) # Nested access with get
+
+    return config
 
 # Disable sentence_transformers logger
 logging.getLogger("sentence_transformers").setLevel(logging.WARNING)
@@ -32,22 +52,11 @@ logging.getLogger("sentence_transformers").setLevel(logging.WARNING)
 # Create logger for this module
 logger = logging.getLogger(__name__)
 
-# --- Configuration ---
-def load_config() -> Dict[str, Any]:
-    """Loads configuration from config.yaml."""
-    try:
-        with open("config.yaml", "r") as f:
-            config = yaml.safe_load(f)
-        return config
-    except FileNotFoundError as e:
-        logger.critical(f"Error reading config.yaml: {e}. Exiting.")
-        sys.exit(1)
-
 # --- Logging ---
 def setup_logging(config: Dict[str, Any]):
     """Sets up logging according to the configuration."""
     logging_config = config.get("logging", {})
-    level_str = logging_config.get("level", "INFO").upper()  # Default to INFO
+    level_str = logging_config.get("level", "DEBUG").upper()  # Default to INFO
     format_str = logging_config.get("format", "%(asctime)s - %(name)s - %(levelname)s - %(message)s")
     try:
         level = getattr(logging, level_str)
@@ -60,122 +69,209 @@ def setup_logging(config: Dict[str, Any]):
 # --- Gemini Model Class ---
 class GeminiModel:
     """
-    Class to interact with Google's Gemini model.
-    Handles initialization and response generation (without streaming).
+    Clase principal para interactuar con el modelo Gemini de Google.
+    Maneja la inicialización y generación de respuestas.
     """
     def __init__(self, config: Dict[str, Any]):
+        # Configuración del logger
         self.logger = logging.getLogger(__name__)
+        # Obtener configuración del modelo de la configuración general
         model_config = config["gemini_model"]
+        # Configuración básica del modelo
         self.model_name = model_config["model_name"]
         self.temperature = model_config["temperature"]
         self.system_instruction = config.get("bot_messages", {}).get("system_prompt")
+        self.image_analysis_prompt_config = config.get("bot_messages", {}).get("image_analysis_prompt")
         self.stop_sequences = model_config["stop_sequences"]
         self.max_output_tokens = model_config["max_output_tokens"]
         self.top_p = model_config["top_p"]
         self.top_k = model_config["top_k"]
         self.safety_settings = model_config["safety_settings"]
-        self.tools = model_config["tools"]
+
+        # Configuración de herramientas (tools)
+        raw_tools_config = model_config.get("tools", {})
+        #self.tools_config = self._prepare_tools_config(raw_tools_config)
+        self.tools_config = None
+        # ID del desarrollador para mensajes de error
         self.developer_chat_id = config.get("developer_chat_id")
+
+        # Inicializar el modelo Gemini
         try:
             self.model = genai.GenerativeModel(self.model_name)
         except Exception as e:
-            self.logger.critical(f"Error initializing Gemini model: {e}")
+            self.logger.critical(f"Error inicializando modelo Gemini: {e}")
             sys.exit(1)
-        # Telegram application will be assigned later
+
+        # La aplicación de Telegram se asignará más tarde
         self.application = None
 
+    def _prepare_tools_config(self, raw_config: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """
+        Prepara la configuración de herramientas para la API de Gemini.
+        Args:
+            raw_config: Configuración en bruto de las herramientas
+        Returns:
+            Lista de configuraciones de herramientas estructuradas
+        """
+        if not raw_config:
+            return None
+
+        tools = []
+        if "function_declarations" in raw_config:
+            for func in raw_config["function_declarations"]:
+                tool = {
+                    "function_declarations": [{
+                        "name": func["name"],
+                        "description": func["description"],
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                param_name: {
+                                    "type": param_info["type"].lower(),
+                                    "description": param_info["description"]
+                                }
+                                for param_name, param_info in func["parameters"]["properties"].items()
+                            },
+                            "required": [
+                                param_name
+                                for param_name, param_info in func["parameters"]["properties"].items()
+                                if param_info.get("required", False)
+                            ]
+                        }
+                    }]
+                }
+                tools.append(tool)
+        return tools if tools else None
+
+    def _build_prompt(self, content: str) -> str:
+        """
+        Construye el prompt apropiado basado en el contenido.
+        Args:
+            content: Contenido del mensaje del usuario
+        Returns:
+            Prompt construido
+        """
+        # Para consultas de tiempo, construye un prompt que activará la búsqueda web
+        if content.lower().startswith(("what is the current time", "what's the current time", "what time is it")):
+            return f"{self.system_instruction}\nPara proporcionar información precisa del tiempo, debo buscar datos actuales.\nuser: {content}"
+        return f"{self.system_instruction}\nuser: {content}"
+
+    async def generate_response_non_streaming(self, content: Union[str, Image.Image],
+                                            chat_id: Optional[int] = None):
+        """
+        Genera una respuesta usando la API de Gemini (sin streaming).
+        Args:
+            content: Contenido del mensaje (texto o imagen)
+            chat_id: ID del chat de Telegram
+        Yields:
+            Fragmentos de la respuesta generada
+        """
+        try:
+            # Configuración de generación (se define aquí para que esté disponible en ambos bloques if/else)
+            generation_config = {
+                "temperature": self.temperature,
+                "top_p": self.top_p,
+                "top_k": self.top_k,
+                "max_output_tokens": self.max_output_tokens,
+            }
+
+            # Manejo de contenido de texto
+            if isinstance(content, str):
+                prompt = self._build_prompt(content)
+                self.logger.debug(f"Enviando prompt a Gemini: {prompt[:200]}...")
+
+                # Generar respuesta inicial
+                response = self.model.generate_content(
+                    prompt,
+                    generation_config=generation_config,
+                    safety_settings=self.safety_settings,
+                    stream=False,
+                )
+
+                if response.text:
+                    yield response.text
+                else:
+                    yield "Lo siento, no pude procesar tu solicitud."
+
+            # Manejo de contenido de imagen
+            else:
+                self.logger.debug("Procesando imagen...")
+                # Convertir imagen a bytes y luego a base64
+                buffered = io.BytesIO()
+                content.save(buffered, format="JPEG")
+                img_str = base64.b64encode(buffered.getvalue()).decode()
+
+                # Construir contenido para análisis de imagen
+                contents = [
+                    {"mime_type": "image/jpeg", "data": img_str},
+                    {"text": self.image_analysis_prompt_config}
+                ]
+
+                # Generar respuesta para la imagen
+                response = self.model.generate_content(
+                    contents,
+                    generation_config=generation_config,
+                    safety_settings=self.safety_settings,
+                    stream=False
+                )
+
+                if response.text:
+                    yield response.text
+                else:
+                    yield "Lo siento, no pude analizar la imagen."
+
+        except Exception as e:
+            error_message = f"Error generando respuesta: {e}"
+            self.logger.exception(error_message)
+            await self._send_developer_error(error_message, traceback.format_exc(), chat_id)
+            yield "Lo siento, ocurrió un error al generar la respuesta."
+
     async def _send_developer_error(self, error_message: str, traceback_message: str, chat_id: int):
-        """Sends an error message to the developer via Telegram."""
+        """
+        Envía un mensaje de error al desarrollador vía Telegram.
+        Args:
+            error_message: Mensaje de error
+            traceback_message: Traceback completo del error
+            chat_id: ID del chat donde ocurrió el error
+        """
         if self.developer_chat_id and self.application and chat_id:
             if self.developer_chat_id == chat_id:
-                self.logger.warning("Developer chat ID is the same as the bot ID. Not sending error message.")
+                self.logger.warning("ID del desarrollador es el mismo que el ID del bot. No se envía mensaje de error.")
                 return
 
             try:
-                #await self.application.bot.send_message(
-                #    chat_id=self.developer_chat_id,
-                #    text=f"{error_message}\n{traceback_message}"
-                #)
-                #Do not sent for being a bot
-                self.logger.warning("Could not send the message to the developer for being a bot")
-            except Exception as telegram_error:
-                self.logger.exception(f"Failed to send message to developer: {telegram_error}")
-
-    def _build_prompt(self, prompt: str) -> str:
-        """Builds the prompt by combining system instructions and user message."""
-        return self.system_instruction + prompt
-
-    async def generate_response_non_streaming(self, content: Union[str, Image.Image], #Union para que reciba tanto imagen como str
-                                              tools: Optional[List[Dict[str, Any]]] = None,
-                                              safety_settings: Optional[List[Dict[str, Any]]] = None,
-                                              system_instruction: Optional[str] = None,
-                                              chat_id: Optional[int] = None):
-        """Generates a response using the Gemini API (non-streaming)."""
-        try:
-            #log_content = content[:200] + "..." if len(content) > 200 else content
-            #self.logger.debug(f"Sending prompt to Gemini: {log_content}")
-
-            #Modified part
-            if isinstance(content, str):
-                prompt = self._build_prompt(content)
-                self.logger.debug(f"Sending prompt to Gemini: {prompt[:200]}...")
-                response = self.model.generate_content(prompt, stream=False)
-            else:
-                self.logger.debug(f"Sending image to Gemini")
-                # Convert the image to bytes and then to base64
-                buffered = io.BytesIO()
-                content.save(buffered, format="JPEG")  # Save the image in a buffer
-                img_str = base64.b64encode(buffered.getvalue()).decode()  # Encode to base64
-
-                response = self.model.generate_content(
-                    [{"mime_type": "image/jpeg", "data": img_str}],
-                    stream=False,
+                await self.application.bot.send_message(
+                    chat_id=self.developer_chat_id,
+                    text=f"Error en chat {chat_id}:\n{error_message}\n\nTraceback:\n{traceback_message}"
                 )
-            #End modified part
-
-            if response and response.candidates:
-                self.logger.debug("Gemini response has candidates.")
-                for candidate in response.candidates:
-                    if candidate.content and candidate.content.parts:
-                        self.logger.debug("Candidate has content and parts.")
-                        for part in candidate.content.parts:
-                            self.logger.debug("Sending part of the response.")
-                            yield part.text
-                    else:
-                        self.logger.debug("Candidate has no content.")
-                        yield "Sorry, this candidate had no content."
-            else:
-                self.logger.debug("Gemini returned an empty response.")
-                yield "Sorry, the model returned an empty response."
-        except Exception as e:
-            error_message = f"Error generating response: {e}"
-            self.logger.exception(error_message)
-            await self._send_developer_error(error_message, traceback.format_exc(), chat_id)
-            yield "Sorry, an error occurred while generating the response."
+            except Exception as telegram_error:
+                self.logger.exception(f"Error enviando mensaje al desarrollador vía Telegram: {telegram_error}")
 
 async def process_image(update: Update, context: CallbackContext):
-    """Processes an incoming image message."""
+    """Processes an incoming image message with error handling."""
     bot = context.bot
-    if update.message.photo:
-        image_file = await bot.get_file(update.message.photo[-1].file_id)
-        image_bytes = await image_file.download_as_bytearray()
-        image = Image.open(io.BytesIO(image_bytes))
-        return image
-    elif update.message.document:
-        if update.message.document.mime_type.startswith('image/'):
-            image_file = await bot.get_file(update.message.document.file_id)
+    try:
+        if update.message.photo:
+            image_file = await bot.get_file(update.message.photo[-1].file_id)
             image_bytes = await image_file.download_as_bytearray()
             image = Image.open(io.BytesIO(image_bytes))
             return image
+        elif update.message.document:
+            if update.message.document.mime_type.startswith('image/'):
+                image_file = await bot.get_file(update.message.document.file_id)
+                image_bytes = await image_file.download_as_bytearray()
+                image = Image.open(io.BytesIO(image_bytes))
+                return image
+    except Exception as e:
+        logger.error(f"Error processing image: {e}") # Log error here
+        return None # Still return None to indicate failure
+
     return None
 
 # --- Persistent Hybrid Memory Class ---
 class PersistentHybridMemory:
     """
     Manages persistent hybrid memory using SQLite.
-    Messages and their embeddings (calculated with SentenceTransformer) are stored in a table
-    to retrieve both short-term memory (last N messages) and relevant messages
-    (using embedding similarity).
     """
     def __init__(self, config: Dict[str, Any]):
         self.logger = logging.getLogger(__name__)
@@ -183,17 +279,17 @@ class PersistentHybridMemory:
         self.db_path = database_config.get("db_path", "chat_memory.db")
         self.short_term_limit = database_config.get("short_term_limit", 10)
         self.top_k = database_config.get("top_k", 3)
-
+        self.tools_config = config.get("gemini_model", {}).get("tools") # Load tools configuration from config
         embedding_model_config = config.get("embedding_model", {})
         model_name = embedding_model_config.get("model_name", "sentence-transformers/all-MiniLM-L6-v2")
         self.embedding_model = SentenceTransformer(model_name)
         self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._cursor = self._conn.cursor()
-        self._create_table()
+        self._create_table() # Call _create_table here in __init__
 
-    def _create_table(self):
-        """Creates the messages table if it doesn't exist."""
+    def _create_table(self): # --- RESTORED _create_table METHOD HERE ---
+        """Creates the messages table if it doesn't exist and adds indexes."""
         self._cursor.execute('''
             CREATE TABLE IF NOT EXISTS messages (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -204,8 +300,12 @@ class PersistentHybridMemory:
                 embedding TEXT
             )
         ''')
+        # --- ADD INDEXES HERE, INSIDE _create_table ---
+        self._cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_chat_timestamp ON messages (chat_id, timestamp DESC)
+        ''')
         self._conn.commit()
-
+        
     def add_message(self, chat_id: int, role: str, content: str):
         """Adds a message to the database, calculating and storing its embedding."""
         embedding = self.embedding_model.encode(content).tolist()  # Convert to list of floats
@@ -222,13 +322,12 @@ class PersistentHybridMemory:
         self._cursor.execute('''
             SELECT role, content FROM messages
             WHERE chat_id = ?
-            ORDER BY timestamp DESC
+            ORDER BY timestamp ASC  -- Changed to ASC for chronological order
             LIMIT ?
         ''', (chat_id, self.short_term_limit))
         rows = self._cursor.fetchall()
-        # Invert the order to be chronological
         messages = [{"role": row["role"], "content": row["content"]} for row in rows]
-        return messages[::-1]
+        return messages # No reversal needed now
 
     def get_similar_messages(self, chat_id: int, user_message: str) -> List[Dict[str, str]]:
         """
@@ -285,13 +384,56 @@ def error_handler(func):
             error_message = f"Error in handler {func.__name__}: {e}"
             logger = logging.getLogger(__name__)
             logger.exception(error_message)
-            user_message = f"An error occurred. Please try again later. (Error ID: {error_id})"
+            # Get user error message from config, with fallback
+            user_message_template = config.get('bot_messages', {}).get('generic_error_message', "An error occurred. Please try again later. (Error ID: {error_id})")
+            user_message = user_message_template.format(error_id=error_id) # Format with error_id
+
             if update and update.effective_chat:
                 await context.bot.send_message(chat_id=update.effective_chat.id, text=user_message)
             # Assumes the 'gemini' variable is global
             await gemini._send_developer_error(error_message, traceback.format_exc(),
                                                update.effective_chat.id if update and update.effective_chat else None)
     return wrapper
+
+# --- Search Tool Functions ---# --- Search Tool Functions ---
+def search_serpapi(query: str, serpapi_config: Dict[str, Any]) -> Optional[List[Dict[str, str]]]: # Changed return type to List[Dict[str, str]]
+    """
+    Realiza una búsqueda en Google usando SerpAPI y devuelve los snippets de los resultados orgánicos.
+    Now returns a list of dictionaries, each with 'title' and 'snippet'.
+    """
+    api_key = serpapi_config.get("api_key")
+    if not api_key:
+        logger.error("SerpAPI API key is missing in configuration.")
+        return None # Return None if API key is missing for error handling
+
+    try:
+        params = {
+            "engine": "google",
+            "q": query,
+            "api_key": api_key,
+            "num": serpapi_config.get("num_results", 5),
+            "gl": serpapi_config.get("gl", "mx"),
+            "hl": serpapi_config.get("hl", "es"),
+        }
+        search = GoogleSearch(params)
+        results = search.get_dict()
+        organic_results = results.get("organic_results", [])
+
+        if not organic_results:
+            return [] # Return empty list if no organic results found
+
+        formatted_results = [] # List to store dictionaries of results
+        for result in organic_results:
+            snippet = result.get("snippet")
+            title = result.get("title")
+            if snippet and title:
+                formatted_results.append({"title": title, "snippet": snippet}) # Append dictionary
+
+        return formatted_results # Return list of dictionaries
+
+    except Exception as e:
+        logger.error(f"Error al realizar la búsqueda en SerpAPI: {e}")
+        return None # Return None if there's an error
 
 # --- Global variables ---
 application: Optional[Application] = None
@@ -391,6 +533,50 @@ async def image_handler(update: Update, context: CallbackContext):
     else:
         await bot.send_message(chat_id=chat_id, text="Please send a valid image.")
 
+# Example of calling search_serpapi from a handler async def handle_search_command(update: Update, context: CallbackContext):
+    user_query = update.message.text # Or get query from command arguments, etc.
+    serpapi_conf = config.get('serpapi', {}) # Get the 'serpapi' config section
+    search_results = search_serpapi(user_query, serpapi_conf) # Pass query and config
+
+    if search_results:
+        await context.bot.send_message(chat_id=update.effective_chat.id, text=search_results)
+    else:
+        await context.bot.send_message(chat_id=update.effective_chat.id, text="Search failed or no results found.")
+
+# --- SEARCH HANDLER ---
+@error_handler
+async def search_handler(update: Update, context: CallbackContext):
+    """Handles the /search command and performs a web search, formatting output in MarkdownV2 with escaping."""
+    query = ' '.join(context.args)
+    if not query:
+        await context.bot.send_message(chat_id=update.effective_chat.id, text="Please provide a search query after the /search command.")
+        return
+
+    serpapi_conf = config.get('serpapi', {})
+    search_results = search_serpapi(query, serpapi_conf)
+
+    if search_results:
+        message_text = ""
+        for result in search_results:
+            title = result["title"]
+            snippet = result["snippet"]
+
+            # Escape special MarkdownV2 characters in title and snippet
+            escaped_title = escape_markdown_v2(title)
+            escaped_snippet = escape_markdown_v2(snippet)
+
+            message_text += f"*{escaped_title}*\n{escaped_snippet}\n\n"
+
+        await context.bot.send_message(chat_id=update.effective_chat.id, text=message_text, parse_mode="MarkdownV2")
+    else:
+        await context.bot.send_message(chat_id=update.effective_chat.id, text="No relevant search results found or search failed.")
+
+def escape_markdown_v2(text: str) -> str:
+    
+    """Escapes special characters for Telegram MarkdownV2. (Version 2 - added '|')"""
+    escape_chars = r'\.()\-+={}!#*|' # Added '|' to the list of characters to escape
+    return "".join([f"\{char}" if char in escape_chars else char for char in text])
+
 # --- Main function ---
 def main() -> None:
     """Sets up and runs the bot application."""
@@ -420,6 +606,7 @@ def main() -> None:
     application.add_handler(CommandHandler(config.get('commands',{}).get('help',"help"), help_command))
     application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), assistant_handler))
     application.add_handler(MessageHandler(filters.PHOTO | filters.Document.IMAGE, image_handler))
+    #application.add_handler(CommandHandler("search", search_handler))
 
     logger.info("Bot is about to start polling...")
     application.run_polling(allowed_updates=Update.ALL_TYPES)

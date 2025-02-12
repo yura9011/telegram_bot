@@ -1,22 +1,24 @@
-# Gemini Pro Personal Assistant Telegram Bot ( AI-GENERATE README)
+# Gemini Pro Personal Assistant Telegram Bot (Version 2)
 
-This is a Telegram bot that uses the Gemini Pro and Gemini Pro Vision models to provide a personal assistant experience. The bot can respond to text messages and analyze images, providing helpful and informative responses.
+This is a Telegram bot that uses the Gemini Pro and Gemini Pro Vision models to provide a personal assistant experience. The bot can respond to text messages, analyze images, and perform web searches, providing helpful and informative responses.
 
 ## Features
 
-*   Text Message Handling: Responds to text messages using the Gemini Pro model.
-*   Image Analysis: Analyzes images using the Gemini Pro Vision model and provides a detailed description.
-*   Persistent Memory: Remembers previous conversations using a SQLite database and sentence embeddings.
-*   Configuration via YAML: All settings are configured via a `config.yaml` file.
-*   Error Handling: Robust error handling with developer notifications.
+*   **Text Message Handling:** Responds to text messages using the Gemini Pro model, leveraging persistent memory for context.
+*   **Image Analysis:** Analyzes images using the Gemini Pro Vision model and provides a detailed description, with improved prompting.
+*   **Persistent Memory:** Remembers previous conversations using a SQLite database and sentence embeddings, enhancing contextual understanding.
+*   **Web Search (New in Version 2):** Integrates with SerpAPI to perform web searches and provide real-time information.  Can be enabled via configuration.
+*   **Configuration via YAML:**  Bot settings are configured via a `config.yaml` file, allowing for easy customization.
+*   **Error Handling:** Robust error handling with developer notifications for efficient debugging.
+*   **MarkdownV2 Output:** Search results are formatted using MarkdownV2 for improved readability in Telegram.
 
 ## Requirements
 
 *   Python 3.9 or higher
 *   [Poetry](https://python-poetry.org/) for dependency management
-*   A Telegram Bot token
-*   A Google Gemini API key
-*   Tesseract OCR (optional, for extracting text from images)
+*   A Telegram Bot token (obtained from BotFather on Telegram)
+*   A Google Gemini API key (enable the Gemini API in the Google Cloud Console)
+*   A SerpAPI API key (optional, for web search functionality)
 
 ## Installation
 
@@ -35,102 +37,42 @@ This is a Telegram bot that uses the Gemini Pro and Gemini Pro Vision models to 
 
 3.  **Configure the bot:**
 
-    *   Create a `config.yaml` file (see example below).
+    *   Create a `config.yaml` file.  See the project documentation or example files for configuration options.
     *   Set the `bot_token` and `gemini_api_key` in the `config.yaml` file.
+    *   If you want to enable web search, set the `serpapi_api_key` in the `config.yaml` file.
     *   Set the `developer_chat_id` to your Telegram user ID to receive error notifications.
 
-4.  **Set up Tesseract OCR (Optional):**
 
-    *   If you want the bot to be able to extract text from images, install Tesseract OCR: [https://tesseract-ocr.github.io/tessdoc/Installation.html](https://tesseract-ocr.github.io/tessdoc/Installation.html)
-    *   Configure the path to the Tesseract executable in your code (see comments in `main.py`).
 
-5.  **Run the bot:**
-
-    ```bash
-    poetry run python main.py
-    ```
-
-## Configuration (config.yaml)
-
-Here's an example `config.yaml` file:
-
-```yaml
-bot_token: "YOUR_TELEGRAM_BOT_TOKEN"
-gemini_api_key: "YOUR_GEMINI_API_KEY"
-developer_chat_id: YOUR_TELEGRAM_USER_ID
-
-gemini_model:
-  model_name: "gemini-pro-vision"
-  temperature: 0.7
-  stop_sequences: null
-  max_output_tokens: null
-  top_p: null
-  top_k: null
-  safety_settings: null
-  tools: null
-
-logging:
-  level: "INFO"
-  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-
-bot_messages:
-  system_prompt: |
-    You are Aurora, an intelligent and empathetic personal assistant. 
-    Analyze the image and provide a detailed description.
-  welcome_message: "Hello! I'm your Personal Assistant Bot, now powered by the Gemini Model!"
-  help_message: "I'm your Personal Assistant Bot, now powered by Gemini!\nType in any questions or requests and I'll use Gemini to help you.\nCommands:\n/start - Start the bot and display the welcome message.\n/help - Show this help message."
-
-database:
-  db_path: "chat_memory.db"
-  short_term_limit: 10
-  top_k: 3
-
-embedding_model:
-  model_name: "sentence-transformers/all-MiniLM-L6-v2"
-
-commands:
-  start: "start"
-  help: "help"
-
-Usage
+## Usage
 
 Start a chat with the bot on Telegram.
 
-Use the /start command to display the welcome message.
+Use the `/start` command to display the welcome message.
 
-Use the /help command to display the help message.
+Use the `/help` command to display the help message.
 
-Send text messages to the bot to generate a response.
+Send text messages to the bot to generate a response. The bot will use its memory of past conversations to provide more relevant answers.
 
 Send images to the bot (with or without a caption) and the bot will analyze the image and provide a description.
 
-Error Handling
+Use the `/search` command followed by a query to perform a web search (if enabled). For example: `/search current weather in Mexico City`. ** NOT WORKING NOW **
 
-The bot includes robust error handling with developer notifications. If an error occurs, a message with the error details will be sent to the Telegram user ID specified in the developer_chat_id setting.
+## What's New in Version 2
 
-Dependencies
+*   **Web Search Integration:** The bot can now perform web searches using the SerpAPI to answer questions that require real-time information.  Enable this feature by configuring your SerpAPI key in `config.yaml`.
+*   **Improved Image Analysis:** Enhanced prompts and handling for image analysis, allowing the bot to provide more detailed and relevant descriptions.
+*   **MarkdownV2 Output:** Search results are formatted using MarkdownV2 for cleaner and more readable output in Telegram.
+*   **Enhanced Error Handling:** More detailed error messages and improved logging for easier debugging.
+*   **Code Refactoring:**  Significant code refactoring for better maintainability and readability.
 
-python-telegram-bot
+## Error Handling
 
-google-generativeai
+The bot includes robust error handling with developer notifications. If an error occurs, a message with the error details will be sent to the Telegram user ID specified in the `developer_chat_id` setting. Check your Telegram for error notifications if the bot isn't behaving as expected.
 
-python-dotenv
+## Contributing
 
-PyYAML
-
-Pillow
-
-pytesseract
-
-sentence-transformers
-
-numpy
-
-aiosqlite (optional, for asynchronous database access)
-
-Contributing
-
-Contributions are welcome! Please submit a pull request with your changes.
+Contributions are welcome! Please submit a pull request with your changes.  See `CONTRIBUTING.md` for detailed guidelines.
 
 ## License
 

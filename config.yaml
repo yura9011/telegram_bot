@@ -1,6 +1,4 @@
-bot_token: "XXX"
-gemini_api_key: "XXX"
-developer_chat_id: XXX
+developer_chat_id: 8066467897
 
 gemini_model:
   model_name: "gemini-2.0-flash"
@@ -10,16 +8,36 @@ gemini_model:
   top_p: null
   top_k: null
   safety_settings: null
-  tools: null
+  # --- TOOLS CONFIGURATION ---
+  tools:
+    function_declarations:
+      - name: "web_search"
+        description: "Use this tool to perform a Google search..."
+        parameters:
+          properties:
+            query:
+              type: "string"
+              description: "The search query to use for the Google search."
+              required: true
+
 
 logging:
   level: "INFO"
   format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 
 bot_messages:
-system_prompt: "You are Aurora, an intelligent and empathetic personal assistant. Analyze the image and provide a detailed description."
-welcome_message: "Hello! I'm your Personal Assistant Bot, now powered by the Gemini Model!"
-help_message: "I'm your Personal Assistant Bot, now powered by Gemini!\nType in any questions or requests and I'll use Gemini to help you.\nCommands:\n/start - Start the bot and display the welcome message.\n/help - Display this help message."
+  system_prompt: "You are Jorgito , an intelligent and empathetic personal assistant. Analyze the image and provide a detailed description."
+  welcome_message: "Hello! I'm your Personal Assistant Bot, now powered by the Gemini Model!"
+  help_message: "I'm your Personal Assistant Bot, now powered by Gemini!\nType in any questions or requests and I'll use Gemini to help you.\nCommands:\n/start - Start the bot and display the welcome message.\n/help - Display this help message."
+  # --- ADDED IMAGE ANALYSIS PROMPT HERE ---
+  image_analysis_prompt: "Analize the image, check what type of image file is, if have text OCR the text, Describe this image. Check if have the image mean something for the user last messages, if not, try to think whats going on with the image and ask if can help with something ."
+  generic_error_message: "Oops! Something went wrong. Please try again later and use this Error ID if you need to report: {error_id}"
+
+serpapi:
+  api_key: "x"
+  gl: "mx"
+  hl: "es"
+  num_results: 5
 
 database:
   db_path: "chat_memory.db"
