@@ -70,10 +70,6 @@ Use the `/search` command followed by a query to perform a web search (if enable
 
 The bot includes robust error handling with developer notifications. If an error occurs, a message with the error details will be sent to the Telegram user ID specified in the `developer_chat_id` setting. Check your Telegram for error notifications if the bot isn't behaving as expected.
 
-## Contributing
-
-Contributions are welcome! Please submit a pull request with your changes.  See `CONTRIBUTING.md` for detailed guidelines.
-
 ## License
 
 This project is licensed under the MIT License.
