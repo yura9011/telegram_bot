@@ -26,8 +26,7 @@ logging:
   format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 
 bot_messages:
-  system_prompt: "You are Jorgito , an intelligent and empathetic personal assistant. Analyze the image and provide a detailed description."
-  welcome_message: "Hello! I'm your Personal Assistant Bot, now powered by the Gemini Model!"
+  system_prompt: "Choose a name for this Journey and use it as Personal Assistant Bot. You can handle images, audio and text, and even perform web searches."
   help_message: "I'm your Personal Assistant Bot, now powered by Gemini!\nType in any questions or requests and I'll use Gemini to help you.\nCommands:\n/start - Start the bot and display the welcome message.\n/help - Display this help message."
   # --- ADDED IMAGE ANALYSIS PROMPT HERE ---
   image_analysis_prompt: "Analize the image, check what type of image file is, if have text OCR the text, Describe this image. Check if have the image mean something for the user last messages, if not, try to think whats going on with the image and ask if can help with something ."
@@ -50,3 +49,10 @@ embedding_model:
 commands:
   start: "start"
   help: "help"
+
+assemblyai:
+  speech_model: "nano" # or "nano"
+  punctuate: True # or False
+  format_text: False # or False
+  language_detection: False # or True, if want autolanguage detection, it needs to be at least 50 second audio file.
+  language_confidence_threshold: 1 # or some value between 0-1
