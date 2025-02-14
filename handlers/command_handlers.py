@@ -5,8 +5,17 @@ from typing import Dict, Any
 from utils.error_handler import error_handler
 from models.gemini_model import GeminiModel
 from models.persistent_memory import PersistentHybridMemory
+from handlers.calendar_handlers import calendar_create
 
 logger = logging.getLogger(__name__)
+
+@error_handler
+async def calendar_create_handler(update: Update, context: CallbackContext) -> None:
+    """
+    Handles the /calendar_create command.
+    """
+    print("calendar_create_handler: Handler is running!")  # Add print statement
+    await calendar_create(update, context)
 
 @error_handler
 async def start(update: Update, context: CallbackContext):
@@ -78,3 +87,4 @@ def register_command_handlers(
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("search", search_command))
+    application.add_handler(CommandHandler("calendar_create", calendar_create_handler)) 

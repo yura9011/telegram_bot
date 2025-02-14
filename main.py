@@ -6,9 +6,12 @@ from models.gemini_model import GeminiModel
 from models.persistent_memory import PersistentHybridMemory
 from telegram.ext import Application
 from telegram import Update
+from telegram.ext import CallbackContext, CallbackQueryHandler, Application, ConversationHandler
 from handlers.command_handlers import register_command_handlers
 from handlers.message_handlers import register_message_handlers
+from handlers.callback_handlers import button_callback
 from handlers.voice_handlers import register_voice_handlers
+from handlers.calendar_handlers import register_calendar_handlers
 
 def create_app():
     """
@@ -22,6 +25,9 @@ def create_app():
 
     # Initialize models
     gemini_instance = GeminiModel(config)
+    persistent_memory_instance = None  # Initialize persistent_memory_instance here
+    gemini_instance.application = application
+    persistent_memory_instance = PersistentHybridMemory(config)
     gemini_instance.application = application
     persistent_memory_instance = PersistentHybridMemory(config)
 
@@ -29,7 +35,8 @@ def create_app():
     register_command_handlers(application, config, gemini_instance, persistent_memory_instance)
     register_message_handlers(application, config, gemini_instance, persistent_memory_instance)
     register_voice_handlers(application, config, gemini_instance, persistent_memory_instance)
-
+    register_calendar_handlers(application, config, gemini_instance, persistent_memory_instance) 
+    application.add_handler(CallbackQueryHandler(button_callback))
     return application, gemini_instance, config, persistent_memory_instance
 
 def main():

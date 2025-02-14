@@ -26,9 +26,10 @@ def load_config() -> Dict[str, Any]:
     config['gemini_api_key'] = os.environ.get('GEMINI_API_KEY', config.get('gemini_api_key'))
     config['serpapi_api_key'] = os.environ.get('SERPAPI_API_KEY', config.get('serpapi', {}).get('api_key'))
     config['assemblyai_api_key'] = os.environ.get('ASSEMBLYAI_API_KEY')
+    config['elevenlabs_api_key'] = os.environ.get('ELEVENLABS_API_KEY')
 
     # Validate required configuration
-    required_keys = ['bot_token', 'gemini_api_key']
+    required_keys = ['bot_token', 'gemini_api_key', 'elevenlabs_api_key']
     for key in required_keys:
         if not config.get(key):
             logger.critical(f"{key} is missing in config.yaml and environment variables.")

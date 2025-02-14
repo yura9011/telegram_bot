@@ -8,11 +8,11 @@ import io
 
 class GeminiModel:
     """Main class for interacting with Google's Gemini model."""
-    
+
     def __init__(self, config: Dict[str, Any]):
         self.logger = logging.getLogger(__name__)
         model_config = config["gemini_model"]
-        
+
         # Basic model configuration
         self.model_name = model_config["model_name"]
         self.temperature = model_config["temperature"]
@@ -24,7 +24,7 @@ class GeminiModel:
         self.top_k = model_config["top_k"]
         self.safety_settings = model_config["safety_settings"]
         self.developer_chat_id = config.get("developer_chat_id")
-        
+
         # Initialize Gemini model
         try:
             self.model = genai.GenerativeModel(self.model_name)
@@ -41,11 +41,12 @@ class GeminiModel:
         return f"{self.system_instruction}\nuser: {content}"
 
     async def generate_response_non_streaming(
-        self, 
+        self,
         content: Union[str, Image.Image],
         chat_id: int = None
     ) -> AsyncGenerator[str, None]:
         """Generates a response using the Gemini API (non-streaming)."""
+        self.logger.debug(f"Starting generate_response_non_streaming for chat_id: {chat_id}") # ADDED DEBUG LOGGING
         try:
             generation_config = {
                 "temperature": self.temperature,
@@ -56,6 +57,7 @@ class GeminiModel:
 
             if isinstance(content, str):
                 prompt = self._build_prompt(content)
+                self.logger.debug(f"Sending text prompt to Gemini: {prompt[:100]}...") # ADDED DEBUG LOGGING
                 response = self.model.generate_content(
                     prompt,
                     generation_config=generation_config,
@@ -63,19 +65,23 @@ class GeminiModel:
                     stream=False,
                 )
                 yield response.text if response.text else "Lo siento, no pude procesar tu solicitud."
-            
+                self.logger.debug(f"Text response from Gemini generated.") # ADDED DEBUG LOGGING
+
+
             else:  # Image content
                 buffered = io.BytesIO()
                 content.save(buffered, format="JPEG")
                 img_str = base64.b64encode(buffered.getvalue()).decode()
-                
+
                 contents = [
                     {"mime_type": "image/jpeg", "data": img_str},
                     {"text": self.image_analysis_prompt_config}
                 ]
-                
+
                 response = self.model.generate_content(
-                    contents,
+                 contents,
+                    # parts=contents, #old way
+
                     generation_config=generation_config,
                     safety_settings=self.safety_settings,
                     stream=False
@@ -83,6 +89,7 @@ class GeminiModel:
                 yield response.text if response.text else "Lo siento, no pude analizar la imagen."
 
         except Exception as e:
+            self.logger.error(f"Exception in generate_response_non_streaming: {e}") # ADDED ERROR LOGGING
             error_message = f"Error generating response: {e}"
             self.logger.exception(error_message)
             await self._send_developer_error(error_message, traceback.format_exc(), chat_id)
@@ -102,3 +109,4 @@ class GeminiModel:
                 )
             except Exception as telegram_error:
                 self.logger.exception(f"Error sending message to developer via Telegram: {telegram_error}")
+        self.logger.debug(f"Finished generate_response_non_streaming for chat_id: {chat_id}") # ADDED DEBUG LOGGING

@@ -26,11 +26,12 @@ logging:
   format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 
 bot_messages:
-  system_prompt: "Choose a name for this Journey and use it as Personal Assistant Bot. You can handle images, audio and text, and even perform web searches."
+  system_prompt: "Choose a name for this Journey and use it as Personal Assistant Bot. Your goal is to help the user with their daily tasks and questions. You can use the tools provided by Gemini to help you. You have a set of tools, can analize Images, send audio chunks , transcribe audios, search on web and manage the google calendar of the user. * Prioritize direct answers over comprehensive coverage, Build on user's language style naturally, Stay focused on the current topic, Transition topics smoothly, Remember context from earlier in conversation"
   help_message: "I'm your Personal Assistant Bot, now powered by Gemini!\nType in any questions or requests and I'll use Gemini to help you.\nCommands:\n/start - Start the bot and display the welcome message.\n/help - Display this help message."
   # --- ADDED IMAGE ANALYSIS PROMPT HERE ---
   image_analysis_prompt: "Analize the image, check what type of image file is, if have text OCR the text, Describe this image. Check if have the image mean something for the user last messages, if not, try to think whats going on with the image and ask if can help with something ."
   generic_error_message: "Oops! Something went wrong. Please try again later and use this Error ID if you need to report: {error_id}"
+  calendar_creation_prompt: "Extract ONLY the event information from the user's text and respond EXCLUSIVELY in valid JSON format. Do not include explanatory text, introductions, goodbyes, or Markdown code blocks. The JSON must have the following keys: 'title', 'date' (format YYYY-MM-DD, if not specified, use 'not specified'), 'time' (format HH:MM, if not specified, use 'not specified'), 'description' (if not specified, use 'No description'). If you cannot extract all the necessary information, or if the text is not about creating an event, respond with JSON: {'title': 'not specified', 'date': 'not specified', 'time': 'not specified', 'description': 'not specified'}. Example of a valid JSON response: {'title': 'Meeting with John', 'date': '2025-03-10', 'time': '15:30', 'description': 'Review proposal'}"
 
 serpapi:
   api_key: "x"
@@ -56,3 +57,14 @@ assemblyai:
   format_text: False # or False
   language_detection: False # or True, if want autolanguage detection, it needs to be at least 50 second audio file.
   language_confidence_threshold: 1 # or some value between 0-1
+
+elevenlabs: # ElevenLabs Configuration
+  voice_id: "fCxG8OHm4STbIsWe4aT9" # Renamed to voice_id - use a Voice ID from ElevenLabs Website
+  model_id: "eleven_monolingual_v1" # Renamed to model_id - use a Model ID from ElevenLabs Website
+
+google_calendar:
+  credentials_file: "google_calendar_credentials.json"
+  token_file: "calendar_token.json"     
+  scopes:                               
+    - "https://www.googleapis.com/auth/calendar.readonly" 
+    - "https://www.googleapis.com/auth/calendar" 
